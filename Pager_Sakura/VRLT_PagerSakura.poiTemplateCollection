@@ -1,0 +1,211 @@
+#T#PagerSakuraProperties
+
+// Mirror Rendering
+[HideInInspector] m_start_blossom_options ("Blossom--{reference_property:_EnableBlossomOptions}", Float) = 0
+[HideInInspector][ThryToggle(PAGER_SAKURA)]_EnableBlossomOptions ("Enable Blossom Options", Float) = 0
+// [ThryWideEnum(Show In Both, 0, Show Only In Mirror, 1, Dont Show In Mirror, 2)] _Mirror ("Show in mirror", Int) = 0
+// _MirrorTexture ("Mirror Texture--{reference_properties:[_MirrorTexturePan, _MirrorTextureUV]},", 2D) = "white" { }
+// [HideInInspector][Vcetor2]_MirrorTexturePan ("Panning", Vector) = (0, 0, 0, 0)
+// [HideInInspector][ThryWideEnum(UV0, 0, UV1, 1, UV2, 2, UV3, 3, Panosphere, 4, World Pos XZ, 5, Polar UV, 6, Distorted UV, 7)] _MirrorTextureUV("UV", Int) = 0
+//_BlossomTilingVert ("Blossom Tiling Y", Float) = 1
+[ThryWideEnum(UV0, 0, UV1, 1, UV2, 2, UV3, 3, Panosphere, 4, World Pos XZ, 5, Polar UV, 6, Distorted UV, 7)] _BlossomUV("Blossom UV", Int) = 0
+_BlossomMask ("Blossom Mask--{reference_properties:[_BlossomMaskPan, _BlossomMaskUV]},", 2D) = "white" { }
+[HideInInspector][Vector2]_BlossomMaskPan ("Panning", Vector) = (0, 0, 0, 0)
+[HideInInspector][ThryWideEnum(UV0, 0, UV1, 1, UV2, 2, UV3, 3, Panosphere, 4, World Pos XZ, 5, Polar UV, 6, Distorted UV, 7)] _BlossomMaskUV("UV", Int) = 0
+
+_BlossomTilingHoriz ("Blossom Tiling X", Float) = 1
+_BlossomTilingVert ("Blossom Tiling Y", Float) = 1
+_BlossomMaskCutoff ("Blossom Cutoff", Range(0, 1)) = 0.01
+
+[HideInInspector] m_end_BlossomOptions ("Blossom", Float) = 0
+
+#T#PagerSakuraKeywords
+#pragma shader_feature_local PAGER_SAKURA
+
+#T#PagerSakuraVariables
+#ifdef PAGER_SAKURA
+float _BlossomUV;
+float _BlossomTilingHoriz;
+float _BlossomTilingVert;
+float _BlossomMaskCutoff;
+Texture2D _BlossomMask;
+float4 _BlossomMask_ST;
+float2 _BlossomMaskPan;
+float _BlossomMaskUV;
+#endif
+
+#T#PagerSakuraFunctions
+#ifdef PAGER_SAKURA
+
+
+#define S(a,b,c) smoothstep(a,b,c)
+#define sat(a) clamp(a,0.0,1.0)
+
+
+// Borrowed from BigWIngs
+float4 N14(float t) {
+    return frac(sin(t*float4(123., 104., 145., 24.))*float4(657., 345., 879., 154.));
+}
+
+
+// Computes the RGB and alpha of a single flower in its own UV space
+float4 sakura(float2 uv, float2 id, float blur)
+{
+    float time = _Time.y + 45.0; //time is offset to avoid the flowers to be aligned at start
+
+    float4 rnd = N14(fmod(id.x, 500.0) * 5.4 + fmod(id.y, 500.0) * 13.67); //get 4 random numbersper flower
+
+    // Offset the flower form the center in a random Lissajous pattern
+    uv *= lerp(0.75, 1.3, rnd.y);
+    uv.x += sin(time * rnd.z * 0.3) * 0.6;
+    uv.y += sin(time * rnd.w * 0.45) * 0.4;
+
+
+    // Computes the angle of the flower with a random rotation speed
+    float angle = atan2(uv.y, uv.x) + rnd.x * 421.47 + _Time.y * lerp(-0.6, 0.6, rnd.x);
+
+
+    // euclidean distance to the center of the flower
+    float dist = length(uv);
+
+    // Flower shaped distance function form the center
+    float petal = 1.0 - abs(sin(angle * 2.5));
+    float sqPetal = petal * petal;
+    petal = lerp(petal, sqPetal, 0.7);
+    float petal2 = 1.0 - abs(sin(angle * 2.5 + 1.5));
+    petal += petal2 * 0.2;
+
+    float sakuraDist = dist + petal * 0.25;
+
+
+    // Compute a blurry shadow mask.
+    float shadowblur = 0.3;
+    float shadow = S(0.5 + shadowblur, 0.5 - shadowblur, sakuraDist) * 0.4;
+
+    //Computes the sharper mask of the flower
+    float sakuraMask = S(0.5 + blur, 0.5 - blur, sakuraDist);
+
+    // The flower has a pink hue and is lighter in the center
+    float3 sakuraCol = float3(1.0, 0.6, 0.7);
+    sakuraCol += (0.5 -  dist) * 0.2;
+
+    // Computes the border mask of the flower
+    float3 outlineCol = float3(1.0, 0.3, 0.3);
+    float outlineMask = S(0.5 - blur, 0.5, sakuraDist + 0.045);
+
+    // Defines a tiling polarspace for the pistil pattern
+    float polarSpace = angle * 1.9098 + 0.5;
+    float polarPistil = frac(polarSpace) - 0.5; // 12 / (2 * pi)
+
+    // Round dot in the center
+    outlineMask += S(0.035 + blur, 0.035 - blur, dist);
+
+    float petalBlur = blur * 2.0;
+    float pistilMask = S(0.12 + blur, 0.12, dist) * S(0.05, 0.05 + blur , dist);
+
+    // Compute the pistil 'bars' in polar space
+    float barW = 0.2 - dist * 0.7;
+    float pistilBar = S(-barW, -barW + petalBlur, polarPistil) * S(barW + petalBlur, barW, polarPistil);
+
+    // Compute the little dots in polar space
+    float pistilDotLen = length(float2(polarPistil * 0.10, dist) - float2(0, 0.16)) * 9.0;
+    float pistilDot = S(0.1 + petalBlur, 0.1 - petalBlur, pistilDotLen);
+
+    //combines the middle an border color
+    outlineMask += pistilMask * pistilBar + pistilDot;
+    sakuraCol = lerp(sakuraCol, outlineCol, sat(outlineMask) * 0.5);
+
+    //sets the background to the shadow color
+    sakuraCol = lerp(float3(0.2, 0.2, 0.8) * shadow, sakuraCol, sakuraMask);
+
+    //incorporates the shadow mask into alpha channel
+    sakuraMask = sat(sakuraMask + shadow);
+
+    //returns the flower in pre-multiplied rgba
+    return float4(sakuraCol, sakuraMask);
+}
+
+// blends a pre-multiplied src onto a dst color (without alpha)
+float3 premulMix(float4 src, float3 dst)
+{
+    return dst.rgb * (1.0 - src.a) + src.rgb;
+}
+
+// blends a pre-multiplied src onto a dst color (with alpha)
+float4 premulMix(float4 src, float4 dst)
+{
+    float4 res;
+    res.rgb = premulMix(src, dst.rgb);
+    res.a = 1.0 - (1.0 - src.a) * (1.0 - dst.a);
+    return res;
+}
+
+
+// Computes a Layer of flowers
+float4 layer(float2 uv, float blur)
+{
+    float2 cellUV = frac(uv) - 0.5;
+    float2 cellId = floor(uv);
+
+    float4 accum = float4(0.0, 0.0, 0.0, 0.0);
+
+    // the flowers can overlap on the 9 neighboring cells so we blend them all together on each cell
+    for (float y = -1.0; y <= 1.0; y++)
+    {
+        for (float x = -1.0; x <= 1.0; x++)
+        {
+            float2 offset = float2(x, y);
+            float4 sakuraf = sakura(cellUV - offset, cellId + offset, blur);
+            accum = premulMix(sakuraf, accum);
+        }
+    }
+
+    return accum;
+}
+
+
+void applySakura(inout PoiFragData poiFragData, in PoiMesh poiMesh)
+{
+    float2 nominalUV = poiMesh.uv[_BlossomUV];
+    float2 uv = nominalUV - 0.5;
+
+    float mask = POI2D_SAMPLER_PAN(_BlossomMask, _MainTex, poiMesh.uv[_BlossomMaskUV], _BlossomMaskPan);
+
+    UNITY_BRANCH
+    if (mask < _BlossomMaskCutoff)
+    {
+	return;
+    }
+
+    uv *= _BlossomTilingHoriz;
+
+    uv.y += _Time.x * 0.1;
+    uv.x -= _Time.x * 0.03 + sin(_Time.x) * 0.1;
+
+    uv *= 4.3;
+
+    // Get bg color instead of gradient
+    float3 col = poiFragData.baseColor;
+    float blur = abs(nominalUV.y - 0.5) * 2.0;
+    blur *= blur * 0.15;
+
+    float4 layer1 = layer(uv, 0.015 + blur);
+    float4 layer2 = layer(uv * 1.5 + float2(124.5, 89.3), 0.05 + blur);
+    //layer2.xyz *= lerp(0.7, 0.95, uv.y);
+    float4 layer3 = layer(uv * 2.3 + float2(463.5, -987.3), 0.08 + blur);
+    //layer2.xyz *= lerp(0.55, 0.85, uv.y);
+
+    col = premulMix(layer3, col);
+    col = premulMix(layer2, col);
+    col = premulMix(layer1, col);
+
+
+
+    poiFragData.baseColor = lerp(col, poiFragData.baseColor, 1-mask);
+}
+#endif
+
+#T#PagerSakuraFunctionCalls
+#ifdef PAGER_SAKURA
+applySakura(poiFragData, poiMesh);
+#endif

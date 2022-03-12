@@ -1,0 +1,191 @@
+#T#PagerChromaticProperties
+
+// Mirror Rendering
+[HideInInspector] m_start_chromatic_options ("Chromatic--{reference_property:_EnableChromaticOptions}", Float) = 0
+[HideInInspector][ThryToggle(PAGER_CHROMATIC)]_EnableChromaticOptions ("Enable Chromatic Options", Float) = 0
+
+[ToggleUI]_ChromaticSwapAxis ("Swap X and Y", Float) = 0
+[ThryWideEnum(UV0, 0, UV1, 1, UV2, 2, UV3, 3, Panosphere, 4, World Pos XZ, 5, Polar UV, 6, Distorted UV, 7)] _ChromaticUV("chromatic UV", Int) = 0
+
+_ChromaticMask ("Chromatic Mask--{reference_properties:[_ChromaticMaskPan, _ChromaticMaskUV]},", 2D) = "white" { }
+[HideInInspector][Vector2]_ChromaticMaskPan ("Panning", Vector) = (0, 0, 0, 0)
+[HideInInspector][ThryWideEnum(UV0, 0, UV1, 1, UV2, 2, UV3, 3, Panosphere, 4, World Pos XZ, 5, Polar UV, 6, Distorted UV, 7)] _ChromaticMaskUV("UV", Int) = 0
+_ChromaticMaskCutoff ("Mask Cutoff", Range(0, 1)) = 0.01
+
+_ChromaticScaleHoriz ("Scale X", Float) = 1
+_ChromaticScaleVert ("Scale Y", Float) = 1
+_ChromaticOffsetX ("Offset X", Range(-1, 1)) = 0
+_ChromaticOffsetY ("Offset Y", Range(-1, 1)) = 0
+
+_ChromaticCutoff ("Light Cutoff", Range(0, 1)) = 0.7
+_ChromaticEmission ("Emission", Float) = 1.0
+_ChromaticStrength ("Color Strength", Float) = 1.0
+
+[HideInInspector] m_start_ChromaticAudioLink ("Audio Link ♫--{ condition_showS:_EnableAudioLink==1}", Float) = 0
+[ToggleUI]_ChromaticVibrationsEnabled ("Music Vibrations", Float) = 0
+_ChromaticMusicReaction ("Music Reaction", Range(0, 1)) = 0.2
+[HideInInspector] m_end_ChromaticAudioLink ("Audio Link", Float) = 0
+
+[HideInInspector] m_end_ChromaticOptions ("Chromatic", Float) = 0
+
+#T#PagerChromaticKeywords
+#pragma shader_feature_local PAGER_CHROMATIC
+
+#T#PagerChromaticVariables
+#ifdef PAGER_CHROMATIC
+float _ChromaticUV;
+float _ChromaticSwapAxis;
+float _ChromaticScaleHoriz;
+float _ChromaticScaleVert;
+float _ChromaticOffsetX;
+float _ChromaticOffsetY;
+float _ChromaticMaskCutoff;
+float _ChromaticCutoff;
+Texture2D _ChromaticMask;
+float4 _ChromaticMask_ST;
+float2 _ChromaticMaskPan;
+float _ChromaticMaskUV;
+float _ChromaticEmission;
+float _ChromaticStrength;
+
+float _ChromaticMusicReaction;
+float _ChromaticVibrationsEnabled;
+#endif
+
+#T#PagerChromaticFunctions
+#ifdef PAGER_CHROMATIC
+
+#define MUSIC_REACTION 0.2
+
+#define S(a, b, c) smoothstep(a, b, c)
+#define sat(a) clamp(a, 0.0, 1.0)
+
+#define pi 3.14159265359
+#define pi2 (pi * 2.0)
+#define halfPi (pi * 0.5)
+
+// Some hash function 2->1
+float N2(float2 p)
+{       // Dave Hoskins - https://www.shadertoy.com/view/4djSRW
+    p = fmod(p, float2(1456.2346,1456.2346));
+    float3 p3  = frac(float3(p.xyx) * float3(443.897, 441.423, 437.195));
+    p3 += dot(p3, p3.yzx + 19.19);
+    return frac((p3.x + p3.y) * p3.z);
+}
+
+
+float CosineInterpolate(float y1, float y2, float t)
+{
+    float mu = (1.0 -cos(t * pi)) * 0.5;
+    return (y1 * (1.0 - mu) + y2 * mu);
+}
+
+// A 2d Noise (Cosine interpolation is more plasing for this effect)
+float Noise2(float2 uv)
+{
+    float2 corner = floor(uv);
+    float c00 = N2(corner + float2(0.0, 0.0));
+    float c01 = N2(corner + float2(0.0, 1.0));
+    float c11 = N2(corner + float2(1.0, 1.0));
+    float c10 = N2(corner + float2(1.0, 0.0));
+
+    float2 diff = frac(uv);
+    return CosineInterpolate(CosineInterpolate(c00, c10, diff.x), CosineInterpolate(c01, c11, diff.x), diff.y);
+}
+
+float LineNoise(float x, float t)
+{
+    float n = Noise2(float2(x * 0.6, t * 0.2));
+    //n += Noise2(float2(x * 0.8, t * 0.2 + 34.8)) * 0.5;
+    //n += Noise2(float2(x * 1.2, t * 0.3 + 56.8)) * 0.25;
+
+    return n - (1.0) * 0.5;
+}
+
+
+float linecalc(float2 uv, float t, float scroll)
+{
+
+    float ax = abs(uv.x);
+    //float2 u = uv;
+    uv.y *= 0.5 + ax * ax * 0.3;
+
+    uv.x += _Time.y * scroll;
+    float n1 = LineNoise(uv.x, t);
+
+    float n2 = LineNoise(uv.x + 0.5, t + 10.0) * 2.0;
+    //return n1 + n2;
+
+    float ay = abs(uv.y - n1);
+    float lum = S(0.02, 0.00, ay) * 1.5;
+    lum += S(1.5, 0.00, ay) * 0.1;
+
+
+    float r = (uv.y - n1) / (n2 - n1);
+    float h = sat(1.0 - r);
+    if (r > 0.0) lum = max(lum, h * h * 0.7);
+
+    return lum;
+}
+
+void applyChromatic(inout PoiFragData poiFragData, in PoiMesh poiMesh, in PoiMods poiMods)
+{
+    float mask = POI2D_SAMPLER_PAN(_ChromaticMask, _MainTex, poiMesh.uv[_ChromaticMaskUV], _ChromaticMaskPan);
+
+    UNITY_BRANCH
+    if (mask < _ChromaticMaskCutoff)
+    {
+        return;
+    }
+
+    float2 uva = poiMesh.uv[_ChromaticUV] * 2 - 1;
+    if (_ChromaticSwapAxis) uva = float2(uva.y, uva.x);
+    float2 uv = float2((uva.x + _ChromaticOffsetX) * _ChromaticScaleHoriz, (uva.y + _ChromaticOffsetY) * _ChromaticScaleVert);
+    float xWave = uv.x;
+    xWave = 0;
+
+
+    float wave = 0.0;
+    float wave1 = 0.0;
+    float wave2 = 0.0;
+    float wave3 = 0.0;
+    float wave4 = 0.0;
+
+    UNITY_BRANCH
+    if (_ChromaticVibrationsEnabled) {
+	wave = poiMods.audioLink[0] * sin(_Time.y * 0.2) * _ChromaticMusicReaction;
+	wave1 = poiMods.audioLink[1] * sin(_Time.y * 0.2 + 0.5) * _ChromaticMusicReaction;
+	wave2 = poiMods.audioLink[2] * sin(_Time.y * 0.2 + 1.0) * _ChromaticMusicReaction;
+	wave3 = poiMods.audioLink[3] * sin(_Time.y * 0.2 + 1.5) * _ChromaticMusicReaction;
+	wave4 = poiMods.audioLink[3] * sin(_Time.y * 0.2 + 2.0) * _ChromaticMusicReaction;
+    }
+
+    float lum = linecalc(uv * float2(4.0, 1.0) + float2(0.0, wave), _Time.y * 0.3, 0.1) * 0.6;
+    lum += linecalc(uv * float2(1.5, 0.9) + float2(0.33, wave1) , _Time.y * 0.5 + 45.0, 0.15) * 0.5;
+    lum += linecalc(uv * float2(1.3, 1.2) + float2(0.66, wave2), _Time.y * 0.4 + 67.3, 0.2) * 0.3;
+    lum += linecalc(uv * float2(1.5, 1.15) + float2(0.8, wave3), _Time.y * 0.77 + 1235.45, 0.23) * 0.43;
+    lum += linecalc(uv * float2(1.5, 1.15) + float2(0.8, wave4), _Time.y * 0.77 + 456.45, 0.3) * 0.25;
+
+    float3 col;
+
+    float x = uv.x * 1.2 + _Time.y * 0.2;
+
+    float3 hue = (sin(float3(x, x + pi2 * 0.33, x + pi2 * 0.66)) + float3(1.0, 1.0, 1.0)) * 0.7;
+
+    float thres = _ChromaticCutoff;
+    if (lum < thres)
+    col = hue * lum / thres;
+    else
+    {
+        col = float3(1.0,1.0,1.0) - (float3(1.0 - (lum - thres),1.0 - (lum - thres),1.0 - (lum - thres)) * (float3(1.0,1.0,1.0) - hue));
+    }
+
+    poiFragData.baseColor = lerp(col, poiFragData.baseColor, mask  * _ChromaticStrength * lum);
+    poiFragData.emission = lerp(poiFragData.emission, col, mask * _ChromaticEmission);
+}
+#endif
+
+#T#PagerChromaticFunctionCalls
+#ifdef PAGER_CHROMATIC
+applyChromatic(poiFragData, poiMesh, poiMods);
+#endif
