@@ -153,11 +153,11 @@ void applyChromatic(inout PoiFragData poiFragData, in PoiMesh poiMesh, in PoiMod
 
     UNITY_BRANCH
     if (_ChromaticVibrationsEnabled) {
-	wave = poiMods.audioLink[0] * sin(_Time.y * 0.2) * _ChromaticMusicReaction;
-	wave1 = poiMods.audioLink[1] * sin(_Time.y * 0.2 + 0.5) * _ChromaticMusicReaction;
-	wave2 = poiMods.audioLink[2] * sin(_Time.y * 0.2 + 1.0) * _ChromaticMusicReaction;
-	wave3 = poiMods.audioLink[3] * sin(_Time.y * 0.2 + 1.5) * _ChromaticMusicReaction;
-	wave4 = poiMods.audioLink[3] * sin(_Time.y * 0.2 + 2.0) * _ChromaticMusicReaction;
+	wave = poiMods.audioLink[0] * (sin(_Time.y * 5) + sin(uv.x * 5)) * _ChromaticMusicReaction;
+	wave1 = poiMods.audioLink[1] * (sin(_Time.y * 20) + sin(uv.x * 20 + 0.5)/2) * _ChromaticMusicReaction;
+	wave2 = poiMods.audioLink[2] * (sin(_Time.y * 40) + sin(uv.x * 40 + 1.0)/2) * _ChromaticMusicReaction;
+	wave3 = poiMods.audioLink[3] * (sin(_Time.y * 80) + sin(uv.x * 80 + 1.5)/3) * _ChromaticMusicReaction;
+	wave4 = poiMods.audioLink[3] * (sin(_Time.y * 160) + sin(uv.x * 160 + 2.0)/4) * _ChromaticMusicReaction;
     }
 
     float lum = linecalc(uv * float2(4.0, 1.0) + float2(0.0, wave), _Time.y * 0.3, 0.1) * 0.6;
